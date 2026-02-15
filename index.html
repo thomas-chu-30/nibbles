@@ -151,6 +151,79 @@
       font-size: 0.85rem;
       color: rgba(255, 255, 255, 0.5);
     }
+
+    .game-area {
+      display: flex;
+      align-items: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding-right: 1rem;
+    }
+
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 10px;
+      width: 200px;
+      height: 200px;
+    }
+
+    @media (min-width: 900px) {
+      .dpad {
+        width: 240px;
+        height: 240px;
+        gap: 12px;
+      }
+    }
+
+    .dpad-btn {
+      width: 100%;
+      height: 100%;
+      min-width: 56px;
+      min-height: 56px;
+      border: none;
+      border-radius: 18px;
+      background: linear-gradient(145deg, rgba(124, 58, 237, 0.5), rgba(168, 85, 247, 0.4));
+      color: #fff;
+      font-size: 2.2rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: transform 0.1s, box-shadow 0.1s, background 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    @media (min-width: 900px) {
+      .dpad-btn {
+        min-width: 68px;
+        min-height: 68px;
+        border-radius: 22px;
+        font-size: 2.6rem;
+      }
+    }
+
+    .dpad-btn:active {
+      transform: scale(0.92);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+      background: linear-gradient(145deg, rgba(0, 255, 136, 0.6), rgba(0, 212, 170, 0.5));
+    }
+
+    .dpad-btn.empty {
+      background: transparent;
+      box-shadow: none;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .dpad-btn.up { grid-column: 2; grid-row: 1; }
+    .dpad-btn.down { grid-column: 2; grid-row: 3; }
+    .dpad-btn.left { grid-column: 1; grid-row: 2; }
+    .dpad-btn.right { grid-column: 3; grid-row: 2; }
   </style>
 </head>
 <body>
@@ -159,13 +232,26 @@
     <span class="score">分數: <strong id="score">0</strong></span>
     <span class="best">最佳: <strong id="best">0</strong></span>
   </div>
-  <div class="game-wrapper">
-    <canvas id="gameCanvas" width="600" height="600"></canvas>
-    <div class="overlay" id="overlay">
-      <h2>開始遊戲</h2>
-      <p>用方向鍵或 WASD 控制蛇的移動</p>
-      <button class="btn btn-primary" id="startBtn">開始</button>
-      <p class="controls-hint">↑ ↓ ← → 或 W A S D</p>
+  <div class="game-area">
+    <div class="game-wrapper">
+      <canvas id="gameCanvas" width="600" height="600"></canvas>
+      <div class="overlay" id="overlay">
+        <h2>開始遊戲</h2>
+        <p>用方向鍵、WASD 或右側按鈕控制</p>
+        <button class="btn btn-primary" id="startBtn">開始</button>
+        <p class="controls-hint">↑ ↓ ← → 或 W A S D 或右側按鈕</p>
+      </div>
+    </div>
+    <div class="dpad" aria-label="方向控制">
+      <button type="button" class="dpad-btn empty" aria-hidden="true"></button>
+      <button type="button" class="dpad-btn up" data-dir="up" aria-label="上">↑</button>
+      <button type="button" class="dpad-btn empty" aria-hidden="true"></button>
+      <button type="button" class="dpad-btn left" data-dir="left" aria-label="左">←</button>
+      <button type="button" class="dpad-btn empty" aria-hidden="true"></button>
+      <button type="button" class="dpad-btn right" data-dir="right" aria-label="右">→</button>
+      <button type="button" class="dpad-btn empty" aria-hidden="true"></button>
+      <button type="button" class="dpad-btn down" data-dir="down" aria-label="下">↓</button>
+      <button type="button" class="dpad-btn empty" aria-hidden="true"></button>
     </div>
   </div>
 
@@ -393,6 +479,28 @@
             break;
         }
       }
+    });
+
+    function setDirection(newDx, newDy) {
+      if (overlay.classList.contains('hidden') && !gameOver) {
+        dx = newDx;
+        dy = newDy;
+      }
+    }
+
+    document.querySelectorAll('.dpad-btn[data-dir]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        switch (btn.dataset.dir) {
+          case 'up':   if (dy !== 1) setDirection(0, -1); break;
+          case 'down': if (dy !== -1) setDirection(0, 1); break;
+          case 'left': if (dx !== 1) setDirection(-1, 0); break;
+          case 'right': if (dx !== -1) setDirection(1, 0); break;
+        }
+      });
+      btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        btn.click();
+      }, { passive: false });
     });
 
     startBtn.addEventListener('click', startGame);
