@@ -20,6 +20,7 @@
       --snake-body: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%);
       --food: radial-gradient(circle, #ff6b35 0%, #f7931e 40%, #ffd93d 100%);
       --glow: 0 0 20px rgba(0, 255, 136, 0.5);
+      --obstacle: linear-gradient(145deg, #374151 0%, #1f2937 50%, #111827 100%);
     }
 
     body {
@@ -152,6 +153,29 @@
       color: rgba(255, 255, 255, 0.5);
     }
 
+    .obstacle-toast {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      padding: 0.5rem 1.25rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f0f23;
+      background: linear-gradient(135deg, #ffd93d, #f7931e);
+      border-radius: 999px;
+      box-shadow: 0 4px 20px rgba(247, 147, 30, 0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s, transform 0.3s;
+      z-index: 5;
+    }
+
+    .obstacle-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
     .game-area {
       display: flex;
       align-items: center;
@@ -241,6 +265,7 @@
         <button class="btn btn-primary" id="startBtn">開始</button>
         <p class="controls-hint">↑ ↓ ← → 或 W A S D 或右側按鈕</p>
       </div>
+      <div class="obstacle-toast" id="obstacleToast" aria-live="polite">障礙物已更新！</div>
     </div>
     <div class="dpad" aria-label="方向控制">
       <button type="button" class="dpad-btn empty" aria-hidden="true"></button>
@@ -269,14 +294,27 @@
 
     const BEST_KEY = 'nibbles_best';
 
+    const OBSTACLE_COUNT = 4;
+
     let snake = [];
     let food = { x: 0, y: 0 };
+    let obstacles = [];
     let dx = 0;
     let dy = 0;
     let score = 0;
     let best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10);
+    const OBSTACLE_INTERVAL_MS = 30_000;
+    const COUNTDOWN_START_MS = 27_000;
+
     let gameLoop = null;
+    let obstacleTimer = null;
+    let countdownInterval = null;
+    let gameStartTime = null;
+    let obstacleToastHide = null;
     let gameOver = false;
+
+    const obstacleToastEl = document.getElementById('obstacleToast');
+    const TOAST_DURATION_MS = 2500;
 
     bestEl.textContent = best;
 
@@ -287,10 +325,40 @@
       };
     }
 
+    function isBlocked(cell) {
+      return (
+        snake.some(s => s.x === cell.x && s.y === cell.y) ||
+        obstacles.some(o => o.x === cell.x && o.y === cell.y)
+      );
+    }
+
     function placeFood() {
       do {
         food = randCell();
-      } while ( snake.some(s => s.x === food.x && s.y === food.y) );
+      } while (isBlocked(food));
+    }
+
+    function placeObstacles(avoidCenter = true) {
+      obstacles = [];
+      const centerX = Math.floor(COLS / 2);
+      const centerY = Math.floor(ROWS / 2);
+      let placed = 0;
+      let attempts = 0;
+      const maxAttempts = 200;
+
+      while (placed < OBSTACLE_COUNT && attempts < maxAttempts) {
+        attempts++;
+        const cell = randCell();
+        if (avoidCenter) {
+          const nearStart = Math.abs(cell.x - centerX) <= 3 && Math.abs(cell.y - centerY) <= 3;
+          if (nearStart) continue;
+        }
+        if (isBlocked(cell)) continue;
+        if (cell.x === food.x && cell.y === food.y) continue;
+        if (obstacles.some(o => o.x === cell.x && o.y === cell.y)) continue;
+        obstacles.push(cell);
+        placed++;
+      }
     }
 
     function initGame() {
@@ -302,6 +370,7 @@
       score = 0;
       gameOver = false;
       scoreEl.textContent = score;
+      placeObstacles();
       placeFood();
       draw();
     }
@@ -370,6 +439,31 @@
       ctx.closePath();
     }
 
+    function drawObstacles() {
+      const margin = 2;
+      obstacles.forEach((obs) => {
+        const x = obs.x * CELL + margin;
+        const y = obs.y * CELL + margin;
+        const size = CELL - margin * 2;
+
+        ctx.save();
+        const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+        gradient.addColorStop(0, '#4b5563');
+        gradient.addColorStop(0.5, '#374151');
+        gradient.addColorStop(1, '#1f2937');
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 6;
+        roundRect(ctx, x, y, size, size, 4);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
     function drawFood() {
       const x = food.x * CELL + CELL / 2;
       const y = food.y * CELL + CELL / 2;
@@ -397,6 +491,7 @@
       ctx.fillStyle = 'rgba(15, 15, 35, 0.4)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      drawObstacles();
       drawFood();
       drawSnake();
     }
@@ -413,6 +508,10 @@
       if (head.y >= ROWS) head.y = 0;
       if (head.y < 0) head.y = ROWS - 1;
       if (snake.some(s => s.x === head.x && s.y === head.y)) {
+        endGame();
+        return;
+      }
+      if (obstacles.some(o => o.x === head.x && o.y === head.y)) {
         endGame();
         return;
       }
@@ -438,6 +537,14 @@
     function endGame() {
       gameOver = true;
       if (gameLoop) clearInterval(gameLoop);
+      if (obstacleTimer) clearInterval(obstacleTimer);
+      obstacleTimer = null;
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = null;
+      gameStartTime = null;
+      if (obstacleToastHide) clearTimeout(obstacleToastHide);
+      obstacleToastHide = null;
+      obstacleToastEl.classList.remove('visible');
       overlay.querySelector('h2').textContent = '遊戲結束';
       overlay.querySelector('p').textContent = `得分: ${score}`;
       startBtn.textContent = '再玩一次';
@@ -447,7 +554,39 @@
     function startGame() {
       overlay.classList.add('hidden');
       initGame();
+      gameStartTime = Date.now();
       gameLoop = setInterval(tick, 120);
+
+      if (obstacleTimer) clearInterval(obstacleTimer);
+      obstacleTimer = setInterval(() => {
+        if (gameOver) return;
+        placeObstacles(false);
+        draw();
+        if (obstacleToastHide) clearTimeout(obstacleToastHide);
+        obstacleToastEl.textContent = '障礙物已更新！';
+        obstacleToastEl.classList.add('visible');
+        obstacleToastHide = setTimeout(() => {
+          obstacleToastEl.classList.remove('visible');
+          obstacleToastHide = null;
+        }, TOAST_DURATION_MS);
+      }, OBSTACLE_INTERVAL_MS);
+
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        if (gameOver || !gameStartTime) return;
+        const elapsed = (Date.now() - gameStartTime) % OBSTACLE_INTERVAL_MS;
+        if (elapsed >= COUNTDOWN_START_MS && elapsed < COUNTDOWN_START_MS + 1000) {
+          obstacleToastEl.textContent = '3';
+          obstacleToastEl.classList.add('visible');
+        } else if (elapsed >= COUNTDOWN_START_MS + 1000 && elapsed < COUNTDOWN_START_MS + 2000) {
+          obstacleToastEl.textContent = '2';
+        } else if (elapsed >= COUNTDOWN_START_MS + 2000 && elapsed < COUNTDOWN_START_MS + 3000) {
+          obstacleToastEl.textContent = '1';
+        } else if (elapsed < COUNTDOWN_START_MS - 1000 || elapsed >= COUNTDOWN_START_MS + 3000) {
+          const t = obstacleToastEl.textContent;
+          if (t === '3' || t === '2' || t === '1') obstacleToastEl.classList.remove('visible');
+        }
+      }, 1000);
     }
 
     document.addEventListener('keydown', (e) => {
